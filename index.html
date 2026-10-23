@@ -1,0 +1,184 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#10131c">
+<title>Tournoi FC27</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#10131c;color:#f5f7fb;font-family:system-ui,Arial,sans-serif}
+header{text-align:center;padding:24px 12px;background:#1b2030}
+h1{font-size:40px;margin:0;font-weight:1000}
+h1 span{color:#b7f34a}
+p{color:#aab3c7;font-size:13px}
+main{max-width:800px;margin:auto;padding:14px}
+button{border:0;border-radius:9px;padding:11px 13px;font-weight:800;cursor:pointer;background:#b7f34a;color:#10131c}
+.secondary{background:#293247;color:white}
+.danger{background:#48242b;color:#ffb0b0}
+.toolbar,.add{display:flex;gap:7px;flex-wrap:wrap}
+input{background:#111622;color:white;border:1px solid #48516a;border-radius:8px;padding:10px;min-width:0}
+#newName{flex:1;width:100%}
+.panel,.match{background:#1b2030;border:1px solid #343d53;border-radius:14px;padding:13px;margin:12px 0}
+.players{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:6px;margin-top:12px}
+.person{display:flex;gap:6px;align-items:center;background:#141a27;padding:6px;border-radius:8px}
+.person input{flex:1;width:100%;border:0;background:transparent}
+.person button{padding:7px;background:#48242b;color:#ffb0b0}
+.muted{color:#aab3c7;font-size:12px;line-height:1.5}
+.round{display:flex;justify-content:space-between;align-items:center}
+.tag,.green{color:#b7f34a;font-size:11px;font-weight:900}
+.versus{display:grid;grid-template-columns:minmax(0,1fr) 40px 20px 40px minmax(0,1fr);align-items:center;gap:4px}
+.name{font-size:13px;font-weight:800;overflow-wrap:anywhere}
+.right{text-align:right}
+.score{width:40px;height:44px;text-align:center;font-size:20px;font-weight:900;padding:0}
+.vs{text-align:center;font-size:10px;color:#aab3c7}
+.save{display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:10px}
+.save button{padding:9px}
+.notice{padding:12px;background:#1b2b1b;border:1px solid #3d6030;border-radius:10px;color:#d8f6b2;font-size:13px}
+.empty{text-align:center;color:#aab3c7;padding:22px;border:1px dashed #343d53;border-radius:12px}
+@media(max-width:360px){.versus{grid-template-columns:minmax(0,1fr) 34px 18px 34px minmax(0,1fr)}.score{width:34px}.name{font-size:11px}}
+</style>
+</head>
+<body>
+<header>
+<div style="color:#b7f34a;letter-spacing:4px;font-size:11px;font-weight:900">COMPÉTITION</div>
+<h1>FC<span>27</span></h1>
+<p>Tournoi à élimination directe</p>
+</header>
+<main>
+<div class="toolbar">
+<button id="draw">🎲 Tirer les matchs</button>
+<button class="secondary" id="copy">📋 Copier les résultats</button>
+<button class="danger" id="reset">↻ Nouveau tournoi</button>
+</div>
+<div class="notice" id="notice"></div>
+<section class="panel">
+<h2>👥 Joueurs (<span id="count">0</span>)</h2>
+<div class="add">
+<input id="newName" placeholder="Nom du joueur à ajouter">
+<button id="add">+ Ajouter</button>
+</div>
+<p>Ajoute ou supprime des joueurs avant le tirage.</p>
+<div class="players" id="players"></div>
+</section>
+<div id="bracket"></div>
+<p class="muted">Les résultats sont sauvegardés dans ce navigateur sur cet appareil.</p>
+</main>
+<script>
+const KEY="fc27_tournoi_v1";
+const initial=[
+"Korokossi Youba","Oloyede Amir","Ibrahima Drame","Galy Seydina",
+"Galy Houssein","Taybi Lokmane","Mohamed Niangane",
+"Soukouna Bamoussa","Bensenouci Anes","Samy Boumoud",
+"Kalass Ayoub","Chatri Imrane","Arslan Azad","Debbah Mohamed"
+];
+function fresh(){return {players:[...initial],started:false,rounds:[],champion:null}}
+let state;
+try{state=JSON.parse(localStorage.getItem(KEY))||fresh()}catch(e){state=fresh()}
+if(!Array.isArray(state.players))state=fresh();
+function persist(){localStorage.setItem(KEY,JSON.stringify(state))}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function shuffle(a){a=[...a];for(let i=a.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function renderPlayers(){
+ document.getElementById("count").textContent=state.players.length;
+ document.getElementById("players").innerHTML=state.players.map((p,i)=>`<div class="person"><input data-edit="${i}" value="${esc(p)}" aria-label="Nom du joueur"><button data-remove="${i}" ${state.started?"disabled":""}>✕</button></div>`).join("");
+ document.querySelectorAll("[data-edit]").forEach(el=>{el.disabled=state.started;el.onchange=()=>{let v=el.value.trim();if(!v){alert("Le nom ne peut pas être vide");renderPlayers();return}state.players[+el.dataset.edit]=v;persist();renderPlayers()}});
+ document.querySelectorAll("[data-remove]").forEach(el=>el.onclick=()=>{if(state.started)return;state.players.splice(+el.dataset.remove,1);persist();render()});
+}
+function addPlayer(){
+ if(state.started){alert("Le tournoi a commencé. Utilise Nouveau tournoi pour modifier les joueurs.");return}
+ let el=document.getElementById("newName"),name=el.value.trim();
+ if(!name)return;
+ if(state.players.some(p=>p.toLowerCase()===name.toLowerCase())){alert("Ce joueur est déjà inscrit.");return}
+ state.players.push(name);el.value="";persist();renderPlayers();
+}
+document.getElementById("add").onclick=addPlayer;
+document.getElementById("newName").onkeydown=e=>{if(e.key==="Enter")addPlayer()};
+function makeRound(names,title){
+ let a=shuffle(names),matches=[];
+ for(let i=0;i<a.length;i+=2){
+  if(i+1<a.length)matches.push({a:a[i],b:a[i+1],sa:"",sb:"",winner:null});
+  else matches.push({a:a[i],b:null,sa:"",sb:"",winner:a[i],bye:true});
+ }
+ return {title,matches};
+}
+function titleFor(n){
+ if(n===2)return "Finale";
+ if(n===4)return "Demi-finales";
+ if(n===8)return "Quarts de finale";
+ if(n===16)return "Huitièmes de finale";
+ return "Tour suivant · "+n+" joueurs";
+}
+function launch(){
+ if(state.started){alert("Le tirage est déjà lancé.");return}
+ let names=state.players.map(p=>p.trim()).filter(Boolean);
+ if(names.length<2){alert("Il faut au moins 2 joueurs.");return}
+ if(new Set(names.map(n=>n.toLowerCase())).size!==names.length){alert("Il y a des noms en double.");return}
+ if(!confirm("Lancer le tirage avec "+names.length+" joueurs ?"))return;
+ state.players=names;state.started=true;state.champion=null;
+ let byeCount=(2**Math.ceil(Math.log2(names.length)))-names.length;
+ state.rounds=[makeRound(names,byeCount?"Tour préliminaire · "+byeCount+" qualification(s) directe(s)":titleFor(names.length))];
+ persist();advance();render();
+}
+function advance(){
+ for(let i=0;i<state.rounds.length;i++){
+  let r=state.rounds[i];
+  if(!r.matches.every(m=>m.winner!==null))return;
+  let winners=r.matches.map(m=>m.winner).filter(Boolean);
+  if(winners.length===1){state.champion=winners[0];persist();return}
+  if(i===state.rounds.length-1){
+   state.rounds.push(makeRound(winners,titleFor(winners.length)));
+   persist();return;
+  }
+ }
+}
+function record(r,m,a,b){
+ let match=state.rounds[r].matches[m];
+ match.sa=a;match.sb=b;match.winner=Number(a)>Number(b)?match.a:match.b;
+ state.rounds=state.rounds.slice(0,r+1);state.champion=null;
+ persist();advance();render();
+}
+function renderBracket(){
+ let root=document.getElementById("bracket");
+ if(!state.started){root.innerHTML='<div class="empty">Ajoute ou retire les joueurs, puis appuie sur <b>Tirer les matchs</b>.</div>';return}
+ let html="";
+ state.rounds.forEach((r,ri)=>{
+  let complete=r.matches.every(m=>m.winner!==null);
+  html+=`<div class="round"><h2>${esc(r.title)}</h2><span class="tag">${complete?"TERMINÉ":"EN COURS"}</span></div>`;
+  r.matches.forEach((m,mi)=>{
+   if(m.bye){html+=`<div class="match"><div class="tag">QUALIFIÉ DIRECTEMENT</div><p class="green">${esc(m.a)}</p></div>`;return}
+   html+=`<div class="match"><div class="muted">Match ${mi+1} · ${m.winner!==null?"Terminé":"À jouer"}</div><div class="versus"><div class="name ${m.winner===m.a?"green":""}">${esc(m.a)}</div><input class="score" type="number" min="0" step="1" inputmode="numeric" id="a-${ri}-${mi}" value="${esc(m.sa)}"><div class="vs">VS</div><input class="score" type="number" min="0" step="1" inputmode="numeric" id="b-${ri}-${mi}" value="${esc(m.sb)}"><div class="name right ${m.winner===m.b?"green":""}">${esc(m.b)}</div></div><div class="save"><span class="muted">${m.winner?"Qualifié : "+esc(m.winner):"Entre les scores"}</span><button data-save="${ri}-${mi}">Enregistrer</button></div></div>`;
+  });
+ });
+ if(state.champion)html+=`<div class="notice" style="text-align:center;font-size:22px">🏆 CHAMPION<br>${esc(state.champion)}</div>`;
+ root.innerHTML=html;
+ root.querySelectorAll("[data-save]").forEach(btn=>btn.onclick=()=>{
+  let [r,m]=btn.dataset.save.split("-").map(Number);
+  let a=document.getElementById(`a-${r}-${m}`).value,b=document.getElementById(`b-${r}-${m}`).value;
+  if(a===""||b===""||Number(a)<0||Number(b)<0||!Number.isInteger(Number(a))||!Number.isInteger(Number(b))){alert("Entre deux scores valides.");return}
+  if(Number(a)===Number(b)){alert("En cas d’égalité, entre le score après tirs au but.");return}
+  record(r,m,a,b);
+ });
+}
+function render(){
+ renderPlayers();renderBracket();
+ document.getElementById("draw").disabled=state.started;
+ document.getElementById("notice").textContent=state.started?"Tournoi en cours : les joueurs sont verrouillés. Les scores sont sauvegardés automatiquement.":"Tu peux modifier la liste jusqu’au lancement. Joueurs inscrits : "+state.players.length+".";
+}
+document.getElementById("draw").onclick=launch;
+document.getElementById("reset").onclick=()=>{
+ if(confirm("Effacer les matchs et scores ? La liste des joueurs sera conservée.")){
+ state.started=false;state.rounds=[];state.champion=null;persist();render()
+ }
+};
+document.getElementById("copy").onclick=async()=>{
+ let out="TOURNOI FC27\n";
+ state.rounds.forEach(r=>{out+="\n"+r.title+"\n";r.matches.forEach((m,i)=>out+=`${i+1}. ${m.a}${m.b?" vs "+m.b:" — qualifié directement"}${m.b&&m.sa!==""&&m.sb!==""?" : "+m.sa+"-"+m.sb+" | Qualifié : "+m.winner:""}\n`)});
+ if(state.champion)out+="\nCHAMPION : "+state.champion;
+ try{await navigator.clipboard.writeText(out);alert("Résultats copiés !")}catch(e){prompt("Copie les résultats",out)}
+};
+render();
+</script>
+</body>
+</html>
